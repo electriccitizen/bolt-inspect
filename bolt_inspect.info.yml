@@ -1,0 +1,6 @@
+name: 'Bolt Inspect'
+type: module
+description: 'Site introspection and test content management for Bolt CLI.'
+core_version_requirement: ^11
+package: Development
+version: '0.1.0'

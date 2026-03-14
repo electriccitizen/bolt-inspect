@@ -1,0 +1,18 @@
+{
+  "name": "electriccitizen/bolt-inspect",
+  "description": "Drupal site introspection and test content management for Bolt CLI",
+  "type": "drupal-module",
+  "license": "GPL-2.0-or-later",
+  "homepage": "https://github.com/electriccitizen/bolt-inspect",
+  "require": {
+    "drupal/core": "^11"
+  },
+  "extra": {
+    "drush": {
+      "services": {
+        "drush.services.yml": "^13"
+      }
+    },
+    "installer-name": "bolt_inspect"
+  }
+}

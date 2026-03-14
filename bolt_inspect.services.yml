@@ -1,0 +1,22 @@
+services:
+  bolt_inspect.site_profiler:
+    class: Drupal\bolt_inspect\Service\SiteProfiler
+    arguments:
+      - '@entity_type.manager'
+      - '@entity_field.manager'
+      - '@extension.list.module'
+      - '@router.route_provider'
+      - '@menu.link_tree'
+
+  bolt_inspect.content_generator:
+    class: Drupal\bolt_inspect\Service\ContentGenerator
+    arguments:
+      - '@entity_type.manager'
+      - '@entity_field.manager'
+      - '@bolt_inspect.entity_tracker'
+
+  bolt_inspect.entity_tracker:
+    class: Drupal\bolt_inspect\Service\TestEntityTracker
+    arguments:
+      - '@state'
+      - '@entity_type.manager'
