@@ -91,11 +91,24 @@ class ContentGenerator {
       'uid' => 1,
     ];
 
+    // Detect auto_entitylabel — populate token source fields even if not required.
+    $autoLabelFields = $this->getAutoLabelFields($bundle);
+
     foreach ($fields as $fieldName => $definition) {
       if (!$definition instanceof FieldConfigInterface) {
         continue;
       }
       if (in_array($fieldName, self::SKIP_FIELDS, TRUE)) {
+        continue;
+      }
+
+      // Generate values for required fields, paragraph references (always),
+      // and fields used by auto_entitylabel tokens.
+      $isRequired = $definition->isRequired();
+      $isParagraph = $definition->getType() === 'entity_reference_revisions';
+      $isAutoLabelField = in_array($fieldName, $autoLabelFields, TRUE);
+
+      if (!$isRequired && !$isParagraph && !$isAutoLabelField) {
         continue;
       }
 
@@ -115,18 +128,40 @@ class ContentGenerator {
   }
 
   /**
+   * Get field names used in auto_entitylabel token patterns for a bundle.
+   *
+   * Extracts field_* references from the [node:field_name] token pattern.
+   * These fields must be populated even if not required, so the auto-generated
+   * title is meaningful and the entity can save without errors.
+   *
+   * @return string[]
+   */
+  private function getAutoLabelFields(string $bundle): array {
+    try {
+      $config = \Drupal::config('auto_entitylabel.settings.node.' . $bundle);
+      $status = $config->get('status');
+      if (!$status) {
+        return [];
+      }
+      $pattern = $config->get('pattern') ?? '';
+      // Extract field names from token patterns like [node:field_first_name].
+      $fields = [];
+      if (preg_match_all('/\[node:(field_\w+)\]/', $pattern, $matches)) {
+        $fields = $matches[1];
+      }
+      return $fields;
+    }
+    catch (\Exception) {
+      return [];
+    }
+  }
+
+  /**
    * Generate a value for a field based on its type and settings.
    */
   private function generateFieldValue(FieldConfigInterface $definition, int $depth): mixed {
     $type = $definition->getType();
     $settings = $definition->getSettings();
-    $required = $definition->isRequired();
-
-    // Only populate required fields (and paragraph fields which are often
-    // not technically required but define the content structure).
-    if (!$required && $type !== 'entity_reference_revisions') {
-      return NULL;
-    }
 
     return match ($type) {
       'string', 'string_long' => $this->generateString($definition),
