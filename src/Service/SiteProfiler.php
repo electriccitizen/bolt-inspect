@@ -192,7 +192,7 @@ class SiteProfiler {
   /**
    * Get custom modules with metadata for AI context.
    *
-   * Detects modules in modules/custom/ and profiles/*/modules/custom/.
+   * Detects modules in modules/custom/ and profile custom module paths.
    * Returns name, description, path, and what the module provides
    * (hooks, services, plugins, config entities, etc.).
    *
