@@ -35,6 +35,7 @@ class SiteProfiler {
       'contentTypes' => $this->getContentTypes(),
       'paragraphBundles' => $this->getParagraphBundles(),
       'enabledModules' => $this->getEnabledModules(),
+      'customModules' => $this->getCustomModules(),
       'routes' => $this->getRoutes(),
       'mediaTypes' => $this->getMediaTypes(),
       'menus' => $this->getMenus(),
@@ -186,6 +187,99 @@ class SiteProfiler {
   private function getEnabledModules(): array {
     $installed = $this->moduleExtensionList->getAllInstalledInfo();
     return array_keys($installed);
+  }
+
+  /**
+   * Get custom modules with metadata for AI context.
+   *
+   * Detects modules in modules/custom/ and profiles/*/modules/custom/.
+   * Returns name, description, path, and what the module provides
+   * (hooks, services, plugins, config entities, etc.).
+   *
+   * @return array<int, array<string, mixed>>
+   */
+  private function getCustomModules(): array {
+    $customModules = [];
+    $installed = $this->moduleExtensionList->getAllInstalledInfo();
+    $appRoot = \Drupal::root();
+
+    foreach ($installed as $name => $info) {
+      $extension = $this->moduleExtensionList->get($name);
+      $path = $extension->getPath();
+
+      // Detect custom modules by path.
+      if (!str_contains($path, 'modules/custom/')) {
+        continue;
+      }
+
+      // Skip bolt_inspect itself.
+      if ($name === 'bolt_inspect') {
+        continue;
+      }
+
+      $moduleData = [
+        'name' => $name,
+        'label' => $info['name'] ?? $name,
+        'description' => $info['description'] ?? '',
+        'path' => $path,
+        'version' => $info['version'] ?? 'custom',
+        'package' => $info['package'] ?? 'Custom',
+      ];
+
+      // Check for key files that indicate what the module does.
+      $fullPath = $appRoot . '/' . $path;
+      $provides = [];
+
+      // Hook implementations (.module file).
+      $moduleFile = $fullPath . '/' . $name . '.module';
+      if (file_exists($moduleFile)) {
+        $content = file_get_contents($moduleFile);
+        // Find hook implementations.
+        $hooks = [];
+        if (preg_match_all('/function\s+' . preg_quote($name, '/') . '_(\w+)\s*\(/', $content, $matches)) {
+          $hooks = $matches[1];
+        }
+        if (!empty($hooks)) {
+          $provides[] = 'hooks: ' . implode(', ', array_slice($hooks, 0, 15));
+        }
+      }
+
+      // Services (services.yml).
+      $servicesFile = $fullPath . '/' . $name . '.services.yml';
+      if (file_exists($servicesFile)) {
+        $provides[] = 'services';
+      }
+
+      // Event subscribers, plugins, forms, controllers (check src/ directory).
+      $srcDir = $fullPath . '/src';
+      if (is_dir($srcDir)) {
+        $srcTypes = [];
+        if (is_dir($srcDir . '/Plugin')) $srcTypes[] = 'plugins';
+        if (is_dir($srcDir . '/Form')) $srcTypes[] = 'forms';
+        if (is_dir($srcDir . '/Controller')) $srcTypes[] = 'controllers';
+        if (is_dir($srcDir . '/EventSubscriber')) $srcTypes[] = 'event_subscribers';
+        if (is_dir($srcDir . '/Entity')) $srcTypes[] = 'entities';
+        if (is_dir($srcDir . '/Commands') || is_dir($srcDir . '/Drush')) $srcTypes[] = 'drush_commands';
+        if (!empty($srcTypes)) {
+          $provides[] = 'src: ' . implode(', ', $srcTypes);
+        }
+      }
+
+      // Config install/optional.
+      if (is_dir($fullPath . '/config/install') || is_dir($fullPath . '/config/optional')) {
+        $provides[] = 'config';
+      }
+
+      // Templates.
+      if (is_dir($fullPath . '/templates')) {
+        $provides[] = 'templates';
+      }
+
+      $moduleData['provides'] = $provides;
+      $customModules[] = $moduleData;
+    }
+
+    return $customModules;
   }
 
   /**
