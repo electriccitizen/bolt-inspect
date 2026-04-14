@@ -1,0 +1,21 @@
+<?php
+
+/**
+ * @file
+ * Install/uninstall hooks for bolt_inspect module.
+ */
+
+/**
+ * Implements hook_uninstall().
+ *
+ * Clean up state entries so the module leaves no traces.
+ */
+function bolt_inspect_uninstall(): void {
+  \Drupal::state()->delete('bolt_inspect.tracked_entities');
+
+  // Clean up any leftover test files.
+  $directory = 'public://bolt-test';
+  if (is_dir($directory)) {
+    \Drupal::service('file_system')->deleteRecursive($directory);
+  }
+}

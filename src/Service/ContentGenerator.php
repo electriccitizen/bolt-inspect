@@ -186,8 +186,28 @@ class ContentGenerator {
       'file' => NULL, // Skip file uploads in MVP.
       'comment' => ['status' => 2], // 0=hidden, 1=closed, 2=open.
       'webform' => NULL, // Webform reference — skip, requires specific webform entity.
-      default => $required ? $this->generateFallback($type) : NULL,
+      default => $this->handleUnknownFieldType($type, $definition),
     };
+  }
+
+  /**
+   * Handle an unrecognized field type — log a warning and attempt a fallback.
+   */
+  private function handleUnknownFieldType(string $type, FieldConfigInterface $definition): ?array {
+    $fieldName = $definition->getName();
+    $entityType = $definition->getTargetEntityTypeId();
+    $bundle = $definition->getTargetBundle();
+    $required = $definition->isRequired();
+
+    \Drupal::logger('bolt_inspect')->warning('Unknown field type "@type" on @entity_type.@bundle.@field (required: @required). Content generation may be incomplete.', [
+      '@type' => $type,
+      '@entity_type' => $entityType,
+      '@bundle' => $bundle,
+      '@field' => $fieldName,
+      '@required' => $required ? 'yes' : 'no',
+    ]);
+
+    return $required ? $this->generateFallback($type) : NULL;
   }
 
   private function generateString(FieldConfigInterface $definition): array {
