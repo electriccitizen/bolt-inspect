@@ -201,10 +201,20 @@ class SiteProfiler {
   private function getCustomModules(): array {
     $customModules = [];
     $installed = $this->moduleExtensionList->getAllInstalledInfo();
-    $appRoot = \Drupal::root();
+    // Lazy-loaded — avoids a container parameter lookup (and the unit-test
+    // failure that comes with it) when no custom modules are installed.
+    $appRoot = NULL;
 
     foreach ($installed as $name => $info) {
+      // Skip bolt_inspect itself before doing any extension lookups.
+      if ($name === 'bolt_inspect') {
+        continue;
+      }
+
       $extension = $this->moduleExtensionList->get($name);
+      if ($extension === NULL) {
+        continue;
+      }
       $path = $extension->getPath();
 
       // Detect custom modules by path.
@@ -212,10 +222,7 @@ class SiteProfiler {
         continue;
       }
 
-      // Skip bolt_inspect itself.
-      if ($name === 'bolt_inspect') {
-        continue;
-      }
+      $appRoot ??= \Drupal::root();
 
       $moduleData = [
         'name' => $name,
