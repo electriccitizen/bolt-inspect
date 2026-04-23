@@ -40,6 +40,7 @@ class SiteProfiler {
       'mediaTypes' => $this->getMediaTypes(),
       'menus' => $this->getMenus(),
       'representativeUrls' => $this->getRepresentativeUrls(),
+      'sampleEntities' => $this->getSampleEntities(),
     ];
   }
 
@@ -98,6 +99,136 @@ class SiteProfiler {
     }
 
     return $bundles;
+  }
+
+  /**
+   * Sample existing entities that any entity_reference field on the site
+   * could point at. Keyed by `${target_type}:${bundle}`, with up to three
+   * `{id, label}` entries per key (bundle may be `*` when the field
+   * imposes no bundle restriction).
+   *
+   * Consumers (bolt's field-interaction plugin) use these to type real
+   * labels into autocomplete widgets instead of hardcoded guesses, so
+   * required entity refs can pass instead of failing with "no items
+   * matching" on every run against a real site.
+   *
+   * @return array<string, array<int, array{id: int|string, label: string}>>
+   */
+  private function getSampleEntities(): array {
+    $samples = [];
+    $targets = [];
+
+    $entityTypesAndBundles = [];
+    foreach ($this->entityTypeManager->getStorage('node_type')->loadMultiple() as $nodeType) {
+      $entityTypesAndBundles[] = ['node', $nodeType->id()];
+    }
+    if ($this->entityTypeManager->hasDefinition('paragraphs_type')) {
+      foreach ($this->entityTypeManager->getStorage('paragraphs_type')->loadMultiple() as $paragraphType) {
+        $entityTypesAndBundles[] = ['paragraph', $paragraphType->id()];
+      }
+    }
+
+    foreach ($entityTypesAndBundles as [$entityType, $bundle]) {
+      $definitions = $this->entityFieldManager->getFieldDefinitions($entityType, $bundle);
+      foreach ($definitions as $definition) {
+        if (!$definition instanceof \Drupal\field\FieldConfigInterface) {
+          continue;
+        }
+        // entity_reference_revisions (paragraphs) aren't autocompleted, skip.
+        if ($definition->getType() !== 'entity_reference') {
+          continue;
+        }
+
+        $settings = $definition->getSettings();
+        $targetType = $settings['target_type'] ?? NULL;
+        if (!$targetType) {
+          continue;
+        }
+        $targetBundles = $settings['handler_settings']['target_bundles'] ?? NULL;
+
+        if (is_array($targetBundles) && !empty($targetBundles)) {
+          foreach (array_keys($targetBundles) as $targetBundle) {
+            $targets[$targetType . ':' . $targetBundle] = [
+              'type' => $targetType,
+              'bundle' => $targetBundle,
+            ];
+          }
+        }
+        else {
+          // No bundle restriction — any bundle of the target_type works.
+          $targets[$targetType . ':*'] = [
+            'type' => $targetType,
+            'bundle' => NULL,
+          ];
+        }
+      }
+    }
+
+    foreach ($targets as $key => $spec) {
+      try {
+        $samples[$key] = $this->querySampleEntities($spec['type'], $spec['bundle']);
+      }
+      catch (\Exception $e) {
+        // Storage missing / target type disabled — skip this key.
+        continue;
+      }
+    }
+
+    return $samples;
+  }
+
+  /**
+   * Query up to three sample entities of a target type, optionally scoped
+   * to a bundle. Returns `[{id, label}, ...]` or empty list.
+   *
+   * @return array<int, array{id: int|string, label: string}>
+   */
+  private function querySampleEntities(string $targetType, ?string $bundle): array {
+    if (!$this->entityTypeManager->hasDefinition($targetType)) {
+      return [];
+    }
+
+    $storage = $this->entityTypeManager->getStorage($targetType);
+    $query = $storage->getQuery()->accessCheck(FALSE)->range(0, 3);
+
+    $entityTypeDef = $this->entityTypeManager->getDefinition($targetType);
+    $bundleKey = $entityTypeDef->getKey('bundle');
+    if ($bundle && $bundleKey) {
+      $query->condition($bundleKey, $bundle);
+    }
+
+    if ($targetType === 'node') {
+      $query->condition('status', 1);
+    }
+    if ($targetType === 'user') {
+      // Exclude anonymous user and restrict to active accounts.
+      $query->condition('status', 1);
+      $query->condition('uid', 0, '>');
+    }
+
+    // Skip bolt's own test content so suggestions point at real data.
+    $labelKey = $entityTypeDef->getKey('label');
+    if ($labelKey) {
+      $query->condition($labelKey, 'Bolt %', 'NOT LIKE');
+    }
+
+    $ids = $query->execute();
+    if (empty($ids)) {
+      return [];
+    }
+
+    $samples = [];
+    foreach ($storage->loadMultiple($ids) as $entity) {
+      $label = $entity->label();
+      if (!is_string($label) || $label === '') {
+        continue;
+      }
+      $samples[] = [
+        'id' => $entity->id(),
+        'label' => $label,
+      ];
+    }
+    return $samples;
   }
 
   /**
